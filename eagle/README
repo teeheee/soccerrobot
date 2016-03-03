@@ -1,0 +1,13 @@
+Version 1.0 is the current used version. It has major errors which need to be fixed after etching (mirrord components)
+
+Version 1.1 is the corrected version. I didn't have time to fix it so be aware of more errors.
+
+IMPORTANT:
+
+	Dont forget to disconnect the onboard 3,3V Voltage generator of your teensy!
+
+
+
+TODO
+
+this board fries a teensy occasionally (3 for 2 Robots over a Year). If you know why please tell me!!! -> alexander.ulbrich@uni-ulm.de

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="soccerrobot" />
+		<Option makefile_is_custom="1" />
+		<Option pch_mode="2" />
+		<Option compiler="gcc" />
+		<Build>
+			<Target title="Debug">
+				<Option output="bin/Debug/soccerrobot" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Debug/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-g" />
+				</Compiler>
+			</Target>
+			<Target title="Release">
+				<Option output="bin/Release/soccerrobot" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-O2" />
+				</Compiler>
+				<Linker>
+					<Add option="-s" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add option="-Wall" />
+		</Compiler>
+		<ExtraCommands>
+			<Add after="make upload" />
+			<Mode after="always" />
+		</ExtraCommands>
+		<Unit filename="src/SPI.cpp" />
+		<Unit filename="src/SPI.h" />
+		<Unit filename="src/XBee.cpp" />
+		<Unit filename="src/XBee.h" />
+		<Unit filename="src/akku.h" />
+		<Unit filename="src/aktuators.cpp" />
+		<Unit filename="src/aktuators.h" />
+		<Unit filename="src/config.cpp" />
+		<Unit filename="src/config.h" />
+		<Unit filename="src/jpeg.cpp" />
+		<Unit filename="src/jpeg.h" />
+		<Unit filename="src/led.cpp" />
+		<Unit filename="src/led.h" />
+		<Unit filename="src/main.cpp" />
+		<Unit filename="src/ov7670.cpp" />
+		<Unit filename="src/ov7670.h" />
+		<Unit filename="src/ov7670_REG.h" />
+		<Unit filename="src/sccb.h" />
+		<Unit filename="src/sensors.cpp" />
+		<Unit filename="src/sensors.h" />
+		<Unit filename="src/serialutils.cpp" />
+		<Unit filename="src/serialutils.h" />
+		<Unit filename="src/soccerrobot.cpp" />
+		<Unit filename="src/soccerrobot.h" />
+		<Unit filename="src/wifi.cpp" />
+		<Unit filename="src/wifi.h" />
+		<Unit filename="src/wifistream.cpp" />
+		<Unit filename="src/wifistream.h" />
+		<Extensions>
+			<code_completion />
+			<debugger />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>

@@ -1,0 +1,775 @@
+
+#include "ov7670.h"
+#include "DMAChannel.h"
+//#include "DmaSpi.h"
+#include "config.h"
+#include "led.h"
+#include "ov7670_REG.h"
+
+//#define alternate1
+//#define alternate2
+#define normal
+
+//#define interrupttrigger
+
+//#define DEBUG
+
+
+
+/***free and malloc***/
+#define BLOCKSIZE WIDTH*2
+#define MAXNUMBER LINEBUFFERSIZE*3
+
+uint8_t memmory[MAXNUMBER][BLOCKSIZE];
+uint8_t memfree[MAXNUMBER];
+
+int count = 0;
+
+
+void init_mem()
+{
+	for(int i = 0; i < MAXNUMBER;i++)
+		memfree[i]=0;
+	count=0;
+}
+
+
+void _free(void* ptr)
+{
+	for(int i = 0; i < MAXNUMBER;i++)
+	{
+		if(memmory[i]==(uint8_t*)ptr)
+		{
+			count--;
+			memfree[i]=0;
+			return;
+		}
+	}
+	ERROR_MESSAGE("[mem] wrong free call!!!\r\n\r\n");
+}
+
+void* _malloc(int i)
+{
+	for(int i = 0; i < MAXNUMBER;i++)
+	{
+			if(memfree[i]==0)
+			{
+				count++;
+				memfree[i]=1;
+				return (void*)memmory[i];
+			}
+	}
+	return 0;
+}
+
+
+/**************/
+
+
+
+
+
+
+#ifdef DEBUGPIN
+#define STARTWORKING digitalWrite(DEBUG_PIN,HIGH)
+#define STOPWORKING digitalWrite(DEBUG_PIN,LOW)
+#else
+#define STARTWORKING
+#define STOPWORKING
+#endif
+
+#define PRESCALER 0b00000001
+#define PLL		  0b01000000
+#define XCLK 	  8000000UL
+
+
+
+
+#define SIZEOFREG 9 //49
+
+#define OV7670_TIMEOUT 5000
+
+const uint8_t OV7725_Reg[SIZEOFREG][2]=
+{
+		{0x12,0x80}, //RESET
+		//{0x42,0x08 | 0b000},
+		//{0x42,0x08 | 0b100},//colorbar
+		{0x11, (0x80 & 0b0000000) | PRESCALER},//prescaler
+		{0x6B, (0x3A & 0b00111111) | PLL},//PLL
+		{0x0C, 0 | 0b00001000}, //enable format scaling
+#ifdef QCIF
+		{0x12, (0 & 0b11000111) | 0b00001000}, //QCIF4
+#endif
+#ifdef QVGA
+		{0x12, (0 & 0b11000111) | 0b00010000}, //QVGA
+#endif
+#ifdef CIF
+		{0x12,  0b00100000}, //QVGA
+#endif
+#ifdef VGA
+		{0x12, (0 & 0b11000111) | 0b00000000}, //QVGA
+#endif
+		{0x15, (1<<5)}, //PCLK off on href low
+		{0x41,18},
+		{0x58,0x1E | 0b10000000},
+		{0x76,0x01 | 0b01100000},
+	/*	{0x4f, 0xc0}, //saturation +2
+		{0x50, 0xc0},
+		{0x51, 0x00},
+		{0x52, 0x33},
+		{0x53, 0x8d},
+		{0x54, 0xc0},
+		{0x58, 0x9e}*/
+/*
+		{0x7a, 0x20},//21/ SLOP : Gamma Curve Highest Segment Slope
+		{0x7b, 0x10},//22/ GAM1 : Gamme Curve 1st Segment
+		{0x7c, 0x1e},//23/ GAM2 : Gamme Curve 2st Segment
+		{0x7d, 0x35},//24/ GAM3 : Gamme Curve 3st Segment
+		{0x7e, 0x5a},//25/ GAM4 : Gamme Curve 4st Segment
+		{0x7f, 0x69},//26/ GAM5 : Gamme Curve 5st Segment
+		{0x80, 0x76},//27/ GAM6 : Gamme Curve 6st Segment
+		{0x81, 0x80},//28/ GAM7 : Gamme Curve 7st Segment
+		{0x82, 0x88},//29/ GAM8 : Gamme Curve 8st Segment
+		{0x83, 0x8f},//30/ GAM9 : Gamme Curve 9st Segment
+		{0x84, 0x96},//31/ GAM10: Gamme Curve 10st Segment
+		{0x85, 0xa3},//32/ GAM11: Gamme Curve 11st Segment
+		{0x86, 0xaf},//33/ GAM12: Gamme Curve 12st Segment
+		{0x87, 0xc4},//34/ GAM13: Gamme Curve 13st Segment
+		{0x88, 0xd7},//35/ GAM14: Gamme Curve 14st Segment
+		{0x89, 0xe8},//36/ GAM15: Gamme Curve 15st Segment
+		//
+		// Automatic Gain Control and AEC Parameters
+		//
+		{0x13, 0x00},//37/ COM8 : Fast AGC/AEC Algorithm
+		{0x00, 0x00},//38/ GAIN
+		{0x10, 0x00},//39/ AECH
+		{0x0d, 0x00},//40/ COM4 :
+		{0x14, 0x18},//41/ COM9 : Automatic Gain Ceiling : 8x
+		{0xa5, 0x05},//42/ BD50MAX: 50 Hz Banding Step Limit
+		{0xab, 0x07},//43/ BD60MAX: 60 Hz Banding Step Limit
+		{0x24, 0x95},//44/ AGC - Stable Operating Region Upper Limit
+		{0x25, 0x33},//45/ AGC - Stable Operating Region Lower Limit
+		{0x26, 0xe3},//46/ AGC - Fast Mode Operating Region
+		{0x9f, 0x78},//47/ HAECC1 : Histogram based AEC Control 1
+		{0xa0, 0x68},//48/ HAECC2 : Histogram based AEC Control 2
+		{0xa1, 0x03},//49/ Reserved
+		{0xa6, 0xd8},//50/ HAECC3 : Histogram based AEC Control 3
+		{0xa7, 0xd8},//51/ HAECC4 : Histogram based AEC Control 4
+		{0xa8, 0xf0},//52/ HAECC5 : Histogram based AEC Control 5
+		{0xa9, 0x90},//53/ HAECC6 : Histogram based AEC Control 6
+		{0xaa, 0x94},//54/ HAECC7 : AEC Algorithm Selection
+		{0x13, 0xe5},//55/ COM8 : Fast AGC Algorithm, Unlimited Step Size , Banding Filter ON, AGC and AEC enable.
+		{0x17, 0x14}//55/ COM8 : Fast AGC Algorithm, Unlimited Step Size , Banding Filter ON, AGC and AEC enable.
+*/
+		//
+		//{0xb0, 0x84},
+		//{0x13, 0xE5},
+		//{0x56, 0x50},
+		//{0x55, 0xb0}
+//		{0x12, 0x0c}, //COM7 DVE: RGB mode, color bar disabled, QCIF (= 176x144 pixels)
+//		{0x8c, 0x00},//2 / RGB444: 0b [7-2] Reserved, [1] RGB444 [0] XR GB(0) , RG BX(1)
+//		{0x04, 0x00},//3 / COM1 : CCIR656 Format Disable
+//		{0x40, 0x10}, //COM15 DVE: RGB565 mode
+//		{15,0b100000},
+//		{0x14, 0x18}//5 / COM9 : 4x gain ceiling
+		//{0x11, 0x01},//6 / CLKRC : (was 3f) Internal Clock, [000000] to [111111] , 16000000 / ( [111111]+ 1 ) = 250000 DVE: deze deelt mijn MCO out van 36MHz [b0..5 + 1]
+		//{0x6b, 0x4a},//72/ DBLV : PPL Control, PLL clk x 4, together with CLKRC it defines the frame rate
+		//
+};
+
+#ifdef normal
+
+#define dmalib
+
+
+void hrefrising();
+void hreffalling();
+void vsyncrising();
+void startdmaline();
+
+
+//shared
+//buffer_flag = 0 -> interrupt hat vollen zugriff
+//buffer_flag = 1 -> interrupt schreibt in new_..
+//buffer_flag = 2 -> new_.. wurde neu beschrieben (interrupt hat keinen zugriff (überspringt frame!!))
+volatile uint8_t buffer_flag;
+
+volatile int new_linecount;
+volatile uint8_t* new_buffer;
+
+volatile int linecount;
+volatile uint8_t* buffer[HEIGHT];
+
+//interrupt read only
+volatile int lastrequestetline;
+
+//main only
+sccb* sccb_controll;
+
+//interrupt only
+volatile uint8_t* tmp_buffer;
+volatile int fps_counter;
+volatile int fps_timer;
+
+#ifdef dmalib
+DMAChannel dma;
+#endif
+
+
+
+
+void printdebug()
+{
+  Serial.print(" lrl: ");
+  Serial.print(lastrequestetline); 
+  Serial.print(" lc: ");
+  Serial.print(linecount); 
+  Serial.print(" buf: ");
+  int sizeofbuffer = 0;
+  for(int x = 0;x< HEIGHT;x++)
+  {
+    if(buffer[x]==0)
+      Serial.print("0");
+    else
+    {
+      Serial.print("1");
+      sizeofbuffer++;
+    }
+  }
+  Serial.print(" sb: ");
+  Serial.print(sizeofbuffer); 
+  Serial.println("");
+}
+
+void dummyprocessor()
+{
+
+    int buffer[255];
+    for(int x = 0; x < 255;x++)
+    	buffer[x]=0;
+    int durchschnittb = 0;
+    int durchschnitta = 0;
+	int t = 0;
+	uint8_t zerodetect = 0xff;
+	uint8_t onedetect = 0;
+  for(int i = 0;i < HEIGHT;i++)
+  {
+    uint8_t* line = (uint8_t*)getline(i);
+    //if(i==20)
+    {
+      for(int j = 0;j < WIDTH ;j+=2)
+      {
+    	  onedetect|=line[j];
+    	  zerodetect &= line[j];
+    	  onedetect|=line[j+1];
+    	  zerodetect &= line[j+1]
+    	                     ;
+    	  buffer[line[j+1]]++;
+    	  buffer[line[j]]++;
+
+    	  durchschnitta+=line[j+1];
+    	  durchschnittb+=line[j];
+    	  if(i==20 && j < 30)
+    	  {
+    	  Serial.print(line[j],HEX);
+        Serial.print(",");
+  	  Serial.print(line[j+1],HEX);
+      Serial.print(",");
+    	  }
+        t++;
+      }
+      freeline(i);
+    }
+    if(i==20)
+    	Serial.println("");
+  }
+  durchschnitta=durchschnitta/t;
+  durchschnittb=durchschnittb/t;
+  Serial.print("DA: ");
+  Serial.print(durchschnitta);
+  Serial.print(" DB: ");
+  Serial.print(durchschnittb);
+  Serial.print(" 0= ");
+  Serial.print(zerodetect);
+  Serial.print(" 0xff= ");
+  Serial.println(onedetect);
+/*  for(int x = 0; x < 255;x++)
+  {
+	  if(buffer[x]>400)
+	  {
+		  Serial.print("(");
+	  Serial.print(x,HEX);
+	  Serial.print(",");
+	  Serial.print(buffer[x]);
+	  Serial.print(") von ");
+	  Serial.println(WIDTH*HEIGHT);
+	  }
+  }*/
+	Serial.println("");
+
+}
+
+int changeregister(uint8_t adress,uint8_t data)
+{
+	sccb sccb_controll;
+	sccb_controll.sccb_writebyte(adress, data);
+    {
+	  Serial.print("sccb ");
+	  Serial.print(data,HEX);
+	  Serial.print("->");
+	  Serial.println(adress,HEX);
+	  return 1;
+    }
+    return 0;
+}
+
+
+void init_ov7670()
+{
+	init_mem();
+  for (int x = 0; x < HEIGHT; x++)
+    buffer[x] = NULL;
+  linecount = -1;
+  fps_counter=0;
+  fps_timer=millis();
+  lastrequestetline = 0;
+  buffer_flag = 0;
+
+  pinMode(HREF_PIN, INPUT);
+  pinMode(VSYNC_PIN, INPUT);
+  pinMode(XCLK_PIN, OUTPUT);
+  pinMode(PCLK_PIN,INPUT);
+  pinMode(DO_PIN, INPUT);
+  pinMode(D1_PIN, INPUT);
+  pinMode(D2_PIN, INPUT);
+  pinMode(D3_PIN, INPUT);
+  pinMode(D4_PIN, INPUT);
+  pinMode(D5_PIN, INPUT);
+  pinMode(D6_PIN, INPUT);
+  pinMode(D7_PIN, INPUT);
+
+#ifdef DEBUGPIN
+  pinMode(DEBUG_PIN,OUTPUT);
+#endif
+
+
+  analogWriteFrequency(XCLK_PIN,XCLK); // generate clock for camera
+  analogWrite(XCLK_PIN, 64);
+
+  delay(100); //wait for clock to start
+
+  for(int x = 0; x < SIZEOFREG;x++)
+  {
+	  changeregister(OV7725_Reg[x][0],OV7725_Reg[x][1]);
+  }
+
+  delay(400); //wait for register change
+
+#ifndef interrupttrigger
+  GPIOE_PDDR &= ~0x02; // gpio input pin 22 on teensy pin 2 on cpu
+  PORTE_PCR1 = (1 << 16) | (1 << 8); // DMA request o und mux gpio
+  PORTE_PCR1 &= ~1; //gpio input
+#endif
+
+
+#ifdef dmalib
+
+  dma = DMAChannel();
+  dma.disable();
+
+#ifndef interrupttrigger
+  dma.triggerAtHardwareEvent(DMAMUX_SOURCE_PORTE);
+#endif
+
+  dma.disableOnCompletion();
+  dma.source((volatile uint8_t&)GPIOD_PDIR);
+  /* this is for xbee dma driver
+#ifdef SEND_WIFI
+  DMAPriorityOrder(dma,  *DMASPI0.getrxChannel(), *DMASPI0.gettxChannel());
+#endif*/
+
+#else
+
+  SIM_SCGC6 |= 2;  // Config DMA MUX
+  SIM_SCGC7 |= 2;     // DMA controller
+
+  DMAMUX0_CHCFG0 = 0;
+  DMAMUX0_CHCFG0 = 51 | DMAMUX_ENABLE;
+
+  DMA_TCD0_CSR = 0; // disable for config
+  DMA_TCD0_SADDR = &GPIOD_PDIR; //SOURCE
+  DMA_TCD0_SOFF = 0; // read same adress
+  DMA_TCD0_ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(0); //8 bit
+  DMA_TCD0_NBYTES_MLNO = 1; // number of bytes per line
+  DMA_TCD0_SLAST = 0; // read same adress
+  DMA_TCD0_DADDR =  (void*)buffer[0]; //DESTINATION
+  DMA_TCD0_DOFF = 1; // jump one byte further
+  DMA_TCD0_CITER_ELINKNO = DMA_DATALENGTH; // single service
+  DMA_TCD0_DLASTSGA = -DMA_DATALENGTH;    // offset added to dest address after completion of major loop
+  DMA_TCD0_BITER_ELINKNO = DMA_DATALENGTH; // single service
+  
+#endif
+
+  NVIC_SET_PRIORITY(IRQ_PORTA, PRIORITY_OV7670);
+  NVIC_SET_PRIORITY(IRQ_PORTC, PRIORITY_OV7670);
+
+
+  attachInterrupt (VSYNC_PIN, vsyncrising, FALLING);
+}
+
+
+
+void startimageandfreeram()
+{
+  stopimageandfreeram();
+  attachInterrupt (VSYNC_PIN, vsyncrising, FALLING);
+
+}
+
+
+
+uint8_t* getline(int index)
+{
+	if(index == 0)
+			init_mem();
+	  STARTWORKING;
+  lastrequestetline = index; // index ändern
+  int time = millis(); //für den timeout
+  uint8_t* tmp_buffer = 0; //returnvariable
+
+  while(1)
+  {
+	   //buffer besetzten
+	  buffer_flag=1;
+		  if(buffer[index]!=0) // zeile ist beschrieben
+		  {
+			  tmp_buffer = (uint8_t*)buffer[index]; // buffer zurückgeben
+			  buffer_flag=0;
+			  break;
+		  }
+	  buffer_flag=0;
+	  delay(1);//WHY!!!!
+
+    if(millis()-time>OV7670_TIMEOUT) // timeout
+    {
+    	ERROR_MESSAGE("[ov7670] THIS IS NO GOOD!!! camera timed out!!!!\r\n");
+    	return 0;
+    }
+  }
+
+  STOPWORKING;
+  return tmp_buffer;
+}
+
+void freeline(int index)
+{
+  STARTWORKING;
+  int time = millis();
+  while(1)
+  {
+
+	   //buffer besetzten
+	  buffer_flag=1;
+		  if(linecount!=index)// zeile wird gerade beschrieben
+		  {
+			  if(buffer[index]) //zeile ist noch nicht frei
+			  {
+			  		lastrequestetline = (index+1)%HEIGHT;
+			  		_free((void*)buffer[index]);
+			  		buffer[index]=NULL;
+			  }
+			  buffer_flag=0;
+			  break;
+		  }
+		buffer_flag=0;
+
+		delay(1);//WHY!!!!
+
+    if(millis()-time>OV7670_TIMEOUT) //timeout
+    {
+    	ERROR_MESSAGE("[ov7670] THIS IS __NOT__ GOOD!!! camera timed out!!!!\r\n");
+    	return;
+    }
+  }
+  STOPWORKING;
+}
+
+void stopimageandfreeram()
+{
+	ERROR_MESSAGE("[ov7670] stop image and free ram should not be used that often\r\n");
+  linecount = -1;
+  detachInterrupt(HREF_PIN);
+  detachInterrupt(VSYNC_PIN);
+#ifdef dmalib
+#ifndef interrupttrigger
+  dma.disable();
+#else
+  detachInterrupt(PCLK_PIN);
+#endif
+#else
+  DMA_CERQ = 0;
+#endif  
+  for(int x = 0; x< HEIGHT;x++)
+  {
+    freeline(x);
+  }
+  init_mem();
+}
+
+
+void startdmaline()
+{ 
+  if((linecount>=lastrequestetline && linecount<=lastrequestetline+LINEBUFFERSIZE) 
+    || (lastrequestetline>HEIGHT-LINEBUFFERSIZE && linecount<=LINEBUFFERSIZE-(HEIGHT-lastrequestetline))
+    )
+  {
+    if (linecount < HEIGHT)
+    {
+      if(tmp_buffer)
+      {
+        return;
+      }
+      tmp_buffer = (uint8_t*)_malloc(WIDTH);
+#ifdef DEBUG
+      //memset(tmp_buffer,0x69,WIDTH);
+#endif
+      if(!tmp_buffer)
+      {
+    	 ERROR_MESSAGE("[ov7670] camera allocation error\r\n");
+        delay(1000);
+        stopimageandfreeram();
+      }
+#ifdef dmalib
+     dma.destinationBuffer(tmp_buffer,DMA_DATALENGTH);
+#else
+      DMA_TCD0_DADDR = (volatile void*)tmp_buffer; //DESTINATION
+      DMA_TCD0_BITER_ELINKNO = DMA_DATALENGTH;
+      DMA_TCD0_CITER_ELINKNO = DMA_DATALENGTH;
+#endif
+    }
+    attachInterrupt (HREF_PIN, hrefrising, RISING);
+  }
+}
+
+void vsyncrising() //end of frame and start of frame
+{  
+	STARTWORKING;
+
+	fps_counter++;
+
+#ifdef dmalib
+#ifndef interrupttrigger
+  dma.disable();
+#else
+  detachInterrupt(PCLK_PIN);
+#endif
+#else
+  DMA_CERQ = 0;
+#endif 
+#ifdef DEBUG
+  /*Serial.println("-------------FRAME--------------");
+  Serial.print("linecount: ");
+  Serial.println(linecount,DEC);
+  Serial.println("--------------------------------");*/
+#endif
+  if(!buffer_flag)
+  {
+	  linecount = 0;
+	  tmp_buffer=(uint8_t*)buffer[linecount];
+	  startdmaline();
+  }
+	STOPWORKING;
+}
+
+void pclkrising()
+{
+	STARTWORKING;
+	dma.triggerManual();
+	STOPWORKING;
+}
+
+void hrefrising() //start of line
+{
+	STARTWORKING;
+  //while (!GPIOD_PDIR);
+#ifdef dmalib
+
+#ifndef interrupttrigger
+  dma.enable();
+#else
+  attachInterrupt(PCLK_PIN,pclkrising,RISING);
+#endif
+#else
+  DMA_SERQ = 0;
+#endif 
+  attachInterrupt (HREF_PIN, hreffalling, FALLING);
+#ifdef DEBUG
+  //Serial.print("<");
+#endif
+	STOPWORKING;
+}
+
+
+void hreffalling()//end of line
+{
+	STARTWORKING;
+#ifdef dmalib
+#ifndef interrupttrigger
+  dma.disable();
+#else
+  detachInterrupt(PCLK_PIN);
+#endif
+#else
+  DMA_CERQ = 0;
+#endif 
+
+  if(!buffer_flag)
+  {
+  	  buffer[linecount]=tmp_buffer;
+  	  linecount++;
+  	  tmp_buffer=(uint8_t*)buffer[linecount];
+  	  startdmaline();
+  }
+
+
+#ifdef DEBUG
+  /*if(buffer[linecount-1]!=0)
+  {
+	  Serial.print(abs((int)buffer[linecount-1]-(int)dma.destinationAddress()),DEC);
+	  Serial.print(">");
+  }
+  else
+	  Serial.print("0>");*/
+#endif
+	STOPWORKING;
+}
+
+
+double getfps()
+{
+
+	return (double)(fps_counter*1000)/(double)(millis()-fps_timer);
+
+}
+
+#endif
+#ifdef alternate2
+
+
+
+ uint8_t buffer1[WIDTH];
+ uint8_t buffer2[WIDTH];
+ uint8_t linelist[HEIGHT];
+int flag;
+
+int changeregister(uint8_t adress,uint8_t data){return 1;}
+
+void init_ov7670()
+{
+	flag = 0;
+	for(int x = 0;x<HEIGHT;x++)
+		linelist[x]=0;
+}
+
+uint8_t* getline(int index)
+{
+	if(index == 0)
+		flag ^=1;
+	linelist[index]++;
+	for(int x = 0;x<WIDTH;x++)
+	{
+		if(x%2==1)
+		{
+			if(x%20<10)
+			{
+				buffer1[x]=0;
+				buffer2[x]=0xff;
+			}
+			else
+			{
+				buffer1[x]=0xff;
+				buffer2[x]=0;
+			}
+		}
+		else
+		{
+			if(x<WIDTH/2)
+			{
+				buffer1[x]=x%255;
+				buffer2[x]=128;
+			}
+			else
+			{
+				buffer1[x]=128;
+				buffer2[x]=x%255;
+			}
+		}
+	}
+
+	if(flag){
+	if(index%20<10)
+		return buffer1;
+	else
+		return buffer2;}
+	else
+	{
+		if(index%20>10)
+			return buffer1;
+		else
+			return buffer2;}
+}
+
+void startimageandfreeram()
+{
+
+}
+
+void stopimageandfreeram()
+{
+
+}
+
+void freeline(int index)
+{
+	linelist[index]--;
+}
+
+
+void dummyprocessor()
+{
+  for(int i = 0;i < HEIGHT;i++)
+  {
+    uint8_t* line = (uint8_t*)getline(i);
+    if(i==20)
+    {
+      for(int j = 0;j < 20 ;j++)
+      {
+        Serial.print(line[j],HEX);
+        Serial.print(",");
+      }
+      Serial.println("");
+    }
+    freeline(i);
+  }
+}
+
+
+void printdebug()
+{
+	 for(int i = 0;i < HEIGHT;i++)
+	 {
+		 Serial.print(linelist[i],DEC);
+		 Serial.print(",");
+	 }
+	 Serial.println();
+}
+
+
+
+
+#endif
+
+
+
+
+
